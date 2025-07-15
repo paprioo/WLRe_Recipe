@@ -1,13 +1,11 @@
-# recipe_app.py (最終整合版)
-
-import webbrowser # <<<--- 在 import 區域加入這一行
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox
-from tkinter import font as tkFont  # 導入 font 模組
+from tkinter import font as tkFont 
 import sqlite3
 import re
-import sys  # <<<--- 導入 sys 模組
-import os   # <<<--- 導入 os 模組
+import sys
+import os
 
 
 
@@ -139,7 +137,6 @@ class RecipeEditor(tk.Toplevel):
         cursor = conn.cursor()
 
         try:
-            # vvv--- 這是核心修正：確保 data_tuple 有 14 個元素 ---vvv
             data_tuple = (
                 data_to_save['species'],
                 data_to_save['level'] or None,
@@ -179,8 +176,6 @@ class RecipeEditor(tk.Toplevel):
                 """
                 cursor.execute(insert_query, data_tuple)
 
-            # ^^^----------------------------------------------------^^^
-
             conn.commit()
             messagebox.showinfo("成功", "資料已成功儲存！")
             self.parent.refresh_all()
@@ -218,13 +213,12 @@ class App(tk.Tk):
         self._tooltip_after_id = None  # 用於存放 after 計時器的 ID
         self._last_tooltip_cell = None  # 用於記錄上一個觸發 tooltip 的儲存格
 
-    # ^^^-----------------------^^^
     def create_widgets(self):
         main_pane = ttk.PanedWindow(self, orient='horizontal')
         main_pane.pack(expand=True, fill='both', padx=10, pady=5)
 
         # --- 左側 ---
-        left_frame = ttk.Frame(main_pane)  # 我們不再需要 Labelframe
+        left_frame = ttk.Frame(main_pane) 
         main_pane.add(left_frame, weight=0)
 
         # --- 左側上方：物種列表 ---
@@ -234,7 +228,7 @@ class App(tk.Tk):
         self.species_listbox.pack(expand=True, fill='both', padx=5, pady=5)
         self.species_listbox.bind('<<ListboxSelect>>', lambda event: self.apply_filters())
 
-        # vvv--- 新增這個區塊：左側下方：資料來源 ---vvv
+        # --- 左側下方：資料來源 ---
         source_frame = ttk.Labelframe(left_frame, text="資料參考來源")
         source_frame.pack(side='bottom', fill='x', pady=(10, 0))
 
@@ -251,7 +245,6 @@ class App(tk.Tk):
             link_label.pack(anchor='w', padx=5, pady=2)
             # 使用 lambda 來確保每個標籤都綁定到正確的 URL
             link_label.bind("<Button-1>", lambda event, link=url: self.open_url(link))
-        # ^^^-------------------------------------------------^^^
 
         # 右側
         right_container = ttk.Frame(main_pane)
@@ -265,10 +258,9 @@ class App(tk.Tk):
         ttk.Label(kw_frame, text="關鍵字搜尋:").pack(side='left', padx=(0, 5))
         self.filters['keyword'] = ttk.Entry(kw_frame);
         self.filters['keyword'].pack(side='left', expand=True, fill='x')
-        # vvv--- 新增這一行事件綁定 ---vvv
         # 當使用者在 Entry 中按下 Enter 鍵 (<Return>) 時，呼叫 apply_filters 方法
         self.filters['keyword'].bind('<Return>', lambda event: self.apply_filters())
-        # ^^^--------------------------^^^
+
 
         self.part_frame = ttk.Labelframe(filter_area, text="部位 (可多選)");
         self.part_frame.pack(fill='x', pady=3, anchor='w')
@@ -305,7 +297,7 @@ class App(tk.Tk):
         tree_frame = ttk.Frame(right_container);
         tree_frame.pack(expand=True, fill='both', pady=(5, 0))
         self.tree = ttk.Treeview(tree_frame, columns=self.columns_order, show='headings')
-        # ... (後續 Treeview 設定保持不變) ...
+
         for col in self.columns_order: self.tree.heading(col, text=col)
         self.tree.column('ID', width=40, anchor='center');
         self.tree.column('物種', width=50);
@@ -353,7 +345,6 @@ class App(tk.Tk):
             self.filters['parts'][part_name] = var
 
     def apply_filters(self):
-        # apply_filters 的邏輯是正確的，保持不變
         base_query = "SELECT * FROM recipes"
         stat_count_logic = "(CASE WHEN ATK NOT NULL AND ATK!=0 THEN 1 ELSE 0 END + CASE WHEN DEF NOT NULL AND DEF!=0 THEN 1 ELSE 0 END + CASE WHEN MATK NOT NULL AND MATK!=0 THEN 1 ELSE 0 END + CASE WHEN MDEF NOT NULL AND MDEF!=0 THEN 1 ELSE 0 END + CASE WHEN SPD NOT NULL AND SPD!=0 THEN 1 ELSE 0 END)"
         conditions, params = [], []
@@ -416,7 +407,6 @@ class App(tk.Tk):
         self.populate_filter_options()
         self.apply_filters()
 
-    # 其他方法... (run_query, populate_tree, 排序, 欄寬調整, 新增/修改等)
     def run_query(self, query, params=()):
         try:
             conn = sqlite3.connect(DB_FILE)
