@@ -677,6 +677,7 @@ class App(tk.Tk):
         self.columns_order = list(self.column_map.keys())
         self.filters = {}
 
+        self.ensure_notes_table()
         self.create_widgets()
         self.populate_filter_options()
         self.apply_filters()
@@ -757,6 +758,9 @@ class App(tk.Tk):
         if hasattr(self, "tree"):
             self.tree.tag_configure('evenrow', background=self.colors["row_even"])
             self.tree.tag_configure('oddrow', background=self.colors["row_odd"])
+        if hasattr(self, "notes_tree"):
+            self.notes_tree.tag_configure('evenrow', background=self.colors["row_even"])
+            self.notes_tree.tag_configure('oddrow', background=self.colors["row_odd"])
         if hasattr(self, "_themed_panel_frames"):
             for frame in self._themed_panel_frames:
                 frame.configure(bg=self.colors["panel"])
@@ -767,6 +771,8 @@ class App(tk.Tk):
     def change_theme(self, event=None):
         """切換模板並重新套用樣式。"""
         self.setup_modern_theme(self.theme_combo.get())
+        self.apply_filters()
+        self.populate_notes_tree()
 
     def create_widgets(self):
         main_pane = ttk.PanedWindow(self, orient='horizontal')
@@ -779,7 +785,7 @@ class App(tk.Tk):
 
         # --- 左側上方：物種列表 ---
         species_frame = ttk.Labelframe(left_frame, text="物種列表")
-        species_frame.pack(expand=True, fill='both', padx=12, pady=(12, 10))
+        species_frame.pack(expand=True, fill='both', padx=12, pady=(12, 6))
         self.species_listbox = tk.Listbox(
             species_frame,
             exportselection=False,
@@ -799,23 +805,21 @@ class App(tk.Tk):
 
         # vvv--- 新增這個區塊：左側下方：資料來源 ---vvv
         source_frame = ttk.Labelframe(left_frame, text="資料參考來源")
-        source_frame.pack(side='bottom', fill='x', padx=12, pady=(0, 12))
+        source_frame.pack(side='bottom', fill='x', padx=12, pady=(0, 8))
 
         # 定義超連結的文字和對應的網址
         links = {
             "巴哈姆特鍊金百科(tonytony7310)": "https://forum.gamer.com.tw/G1.php?bsn=8897&parent=5247",
             "巴哈姆特[星耀]屬爬等表(nrmk132475)": "https://forum.gamer.com.tw/C.php?bsn=82442&snA=139&tnum=5",
-            "巴哈姆特星飄－煉金百科(nrmk132475)": "https://forum.gamer.com.tw/Co.php?bsn=82442&sn=446",
-            "裝備合成表(aska2500)": "https://nextjs-github-vercel.vercel.app/"
-
-
+            "裝備合成表(aska2500)": "https://nextjs-github-vercel.vercel.app/",
+            "星飄－煉金百科(nrmk132475)": "https://forum.gamer.com.tw/Co.php?bsn=82442&sn=446"
         }
 
         # 創建超連結標籤
         self.source_link_labels = []
         for text, url in links.items():
             link_label = tk.Label(source_frame, text=text, fg=self.colors["accent_soft"], bg=self.colors["panel"], cursor="hand2")
-            link_label.pack(anchor='w', padx=10, pady=5)
+            link_label.pack(anchor='w', padx=8, pady=1)
             # 使用 lambda 來確保每個標籤都綁定到正確的 URL
             link_label.bind("<Button-1>", lambda event, link=url: self.open_url(link))
             self.source_link_labels.append(link_label)
@@ -845,8 +849,9 @@ class App(tk.Tk):
         stat_count_frame = ttk.Frame(stat_count_content, style='Card.TFrame')
         stat_count_frame.pack(side='left', expand=True, fill='x')
         self.filters['stat_count'] = tk.StringVar(value="全部")
-        for option in ['全部', '單屬性', '多屬性', '無屬性']:
-            rb = ttk.Radiobutton(stat_count_frame, text=option, variable=self.filters['stat_count'], value=option).pack(
+        stat_count_options = [('全部', '全部'), ('單屬性', '單屬性'), ('多屬性', '多屬性'), ('無屬性', '材料')]
+        for value, label in stat_count_options:
+            rb = ttk.Radiobutton(stat_count_frame, text=label, variable=self.filters['stat_count'], value=value).pack(
                 side='left', padx=5)
 
         stats_row, stats_content = self.build_filter_card(filter_area, "數值範圍")
@@ -863,6 +868,20 @@ class App(tk.Tk):
             ttk.Label(entry_group, text="-").pack(side='left', padx=2)
             self.filters[f'{stat}_max'] = ttk.Entry(entry_group, width=5, style='Compact.TEntry');
             self.filters[f'{stat}_max'].pack(side='left')
+
+        level_separator = ttk.Separator(stats_frame, orient='vertical')
+        level_separator.pack(side='left', fill='y', padx=(0, 15))
+
+        level_group = ttk.Frame(stats_frame, style='Card.TFrame');
+        level_group.pack(side='left', padx=(0, 15));
+        ttk.Label(level_group, text="物等").pack()
+        level_entry_group = ttk.Frame(level_group, style='Card.TFrame');
+        level_entry_group.pack()
+        self.filters['level_min'] = ttk.Entry(level_entry_group, width=5, style='Compact.TEntry');
+        self.filters['level_min'].pack(side='left')
+        ttk.Label(level_entry_group, text="-").pack(side='left', padx=2)
+        self.filters['level_max'] = ttk.Entry(level_entry_group, width=5, style='Compact.TEntry');
+        self.filters['level_max'].pack(side='left')
 
         # --- 第五行：按鈕 & 字體設定 ---
         control_card, control_frame = self.build_filter_card(filter_area, "控制")
@@ -889,10 +908,9 @@ class App(tk.Tk):
         self.font_size_combo.bind("<<ComboboxSelected>>", self.update_font)
         # ^^^-----------------------^^^
 
-        # 新增/修改/刪除按鈕移到最右邊
-        ttk.Button(control_frame, text="批量新增", command=self.batch_add_recipes, style='Accent.TButton').pack(side='right', padx=8)
-        ttk.Button(control_frame, text="修改選定配方", command=self.modify_recipe).pack(side='right', padx=8)
-        ttk.Button(control_frame, text="刪除選定配方", command=self.delete_recipe).pack(side='right', padx=8)
+        # 篩選結果筆數
+        self.result_count_var = tk.StringVar(value="共 0 筆")
+        ttk.Label(control_frame, textvariable=self.result_count_var, style='Card.TLabel').pack(side='left', padx=(18, 0))
 
         theme_frame = ttk.Frame(control_frame, style='Card.TFrame')
         theme_frame.pack(side='left', padx=18)
@@ -903,9 +921,21 @@ class App(tk.Tk):
         self.theme_combo.pack(side='left', padx=(6, 0))
         self.theme_combo.bind("<<ComboboxSelected>>", self.change_theme)
 
-        tree_frame = ttk.Frame(right_container);
-        tree_frame.pack(expand=True, fill='both', pady=(8, 0))
+        # 配方操作工具列（新增/修改/刪除）
+        recipe_toolbar = ttk.Frame(right_container, style='Card.TFrame')
+        recipe_toolbar.pack(side='top', fill='x', pady=(8, 0))
+        ttk.Button(recipe_toolbar, text="批量新增", command=self.batch_add_recipes, style='Accent.TButton').pack(side='left')
+        ttk.Button(recipe_toolbar, text="修改選定配方", command=self.modify_recipe).pack(side='left', padx=8)
+        ttk.Button(recipe_toolbar, text="刪除選定配方", command=self.delete_recipe).pack(side='left')
+
+        self.main_notebook = ttk.Notebook(right_container)
+        self.main_notebook.pack(expand=True, fill='both', pady=(8, 0))
+
+        # --- 分頁一：配方列表 ---
+        tree_frame = ttk.Frame(self.main_notebook);
+        self.main_notebook.add(tree_frame, text="配方列表")
         self.tree = ttk.Treeview(tree_frame, columns=self.columns_order, show='headings')
+        self.tree['displaycolumns'] = [c for c in self.columns_order if c != 'ID']
         # ... (後續 Treeview 設定保持不變) ...
         for col in self.columns_order: self.tree.heading(col, text=col)
         self.tree.column('ID', width=40, anchor='center');
@@ -924,6 +954,7 @@ class App(tk.Tk):
         self.tree.column('參考配方(初階)', width=150)
         self.tree.bind('<Button-1>', self.on_header_click);
         self.tree.bind('<Double-1>', self.on_header_double_click)
+        self.tree.bind('<Double-1>', self.on_recipe_double_click, add='+')
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview);
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -936,6 +967,53 @@ class App(tk.Tk):
         self.tree.bind('<Motion>', self.on_tree_motion)
         self.tree.tag_configure('evenrow', background=self.colors["row_even"])
         self.tree.tag_configure('oddrow', background=self.colors["row_odd"])
+
+        # --- 分頁二：我的筆記 ---
+        notes_frame = ttk.Frame(self.main_notebook)
+        self.main_notebook.add(notes_frame, text="我的筆記")
+
+        notes_toolbar = ttk.Frame(notes_frame, style='Card.TFrame')
+        notes_toolbar.pack(side='top', fill='x', pady=(8, 4), padx=4)
+        ttk.Label(
+            notes_toolbar,
+            text="在「配方列表」雙擊任一列即可加入筆記；在此處雙擊可移除。",
+            style='Card.TLabel'
+        ).pack(side='left')
+        ttk.Button(notes_toolbar, text="移除選定項目", command=self.remove_selected_notes).pack(side='right', padx=4)
+        ttk.Button(notes_toolbar, text="清空筆記", command=self.clear_notes).pack(side='right')
+
+        notes_table_frame = ttk.Frame(notes_frame)
+        notes_table_frame.pack(expand=True, fill='both')
+        self.notes_tree = ttk.Treeview(notes_table_frame, columns=self.columns_order, show='headings')
+        self.notes_tree['displaycolumns'] = [c for c in self.columns_order if c != 'ID']
+        for col in self.columns_order: self.notes_tree.heading(col, text=col)
+        self.notes_tree.column('ID', width=40, anchor='center');
+        self.notes_tree.column('物種', width=50);
+        self.notes_tree.column('物等', width=40, anchor='center');
+        self.notes_tree.column('名稱', width=120);
+        self.notes_tree.column('部位', width=60);
+        self.notes_tree.column('ATK', width=50, anchor='center');
+        self.notes_tree.column('DEF', width=50, anchor='center');
+        self.notes_tree.column('MATK', width=50, anchor='center');
+        self.notes_tree.column('MDEF', width=50, anchor='center');
+        self.notes_tree.column('SPD', width=50, anchor='center');
+        self.notes_tree.column('其他', width=100);
+        self.notes_tree.column('公式', width=150);
+        self.notes_tree.column('參考配方', width=250);
+        self.notes_tree.column('參考配方(初階)', width=150)
+        self.notes_tree.bind('<Double-1>', lambda e: self.remove_selected_notes())
+        notes_vsb = ttk.Scrollbar(notes_table_frame, orient="vertical", command=self.notes_tree.yview)
+        notes_hsb = ttk.Scrollbar(notes_table_frame, orient="horizontal", command=self.notes_tree.xview)
+        self.notes_tree.configure(yscrollcommand=notes_vsb.set, xscrollcommand=notes_hsb.set)
+        self.notes_tree.grid(row=0, column=0, sticky='nsew')
+        notes_vsb.grid(row=0, column=1, sticky='ns')
+        notes_hsb.grid(row=1, column=0, sticky='ew')
+        notes_table_frame.grid_rowconfigure(0, weight=1)
+        notes_table_frame.grid_columnconfigure(0, weight=1)
+        self.notes_tree.tag_configure('evenrow', background=self.colors["row_even"])
+        self.notes_tree.tag_configure('oddrow', background=self.colors["row_odd"])
+
+        self.populate_notes_tree()
 
     def build_filter_card(self, parent, title):
         """建立一個卡片式篩選列。"""
@@ -1032,14 +1110,31 @@ class App(tk.Tk):
             conditions.append(multi_stat_logic)
         elif stat_count_choice == '無屬性':
             conditions.append(f"{stat_count_logic} = 0")
+        def is_valid_int(s):
+            if not s:
+                return False
+            if s.startswith('-'):
+                return s[1:].isdigit()
+            return s.isdigit()
+
         for stat in ['ATK', 'DEF', 'MATK', 'MDEF', 'SPD']:
             min_val, max_val = self.filters[f'{stat}_min'].get().strip(), self.filters[f'{stat}_max'].get().strip()
-            if min_val.isdigit() and max_val.isdigit():
+            min_ok, max_ok = is_valid_int(min_val), is_valid_int(max_val)
+            if min_ok and max_ok:
                 conditions.append(f"{stat} BETWEEN ? AND ?"); params.extend([int(min_val), int(max_val)])
-            elif min_val.isdigit():
+            elif min_ok:
                 conditions.append(f"{stat} >= ?"); params.append(int(min_val))
-            elif max_val.isdigit():
+            elif max_ok:
                 conditions.append(f"{stat} <= ?"); params.append(int(max_val))
+
+        level_min, level_max = self.filters['level_min'].get().strip(), self.filters['level_max'].get().strip()
+        level_min_ok, level_max_ok = level_min.isdigit(), level_max.isdigit()
+        if level_min_ok and level_max_ok:
+            conditions.append("level BETWEEN ? AND ?"); params.extend([int(level_min), int(level_max)])
+        elif level_min_ok:
+            conditions.append("level >= ?"); params.append(int(level_min))
+        elif level_max_ok:
+            conditions.append("level <= ?"); params.append(int(level_max))
         final_query = base_query
         if conditions: final_query += " WHERE " + " AND ".join(conditions)
         if self.sort_by:
@@ -1061,6 +1156,8 @@ class App(tk.Tk):
         for stat in ['ATK', 'DEF', 'MATK', 'MDEF', 'SPD']:
             self.filters[f'{stat}_min'].delete(0, 'end');
             self.filters[f'{stat}_max'].delete(0, 'end')
+        self.filters['level_min'].delete(0, 'end');
+        self.filters['level_max'].delete(0, 'end')
         self.sort_by = None
         self.apply_filters()
         self.after(100, lambda: self.restore_tree_selection(selected_ids, scroll_to_focus=True))
@@ -1118,7 +1215,26 @@ class App(tk.Tk):
             self.tree.see(restored_items[0])
 
     # 其他方法... (run_query, populate_tree, 排序, 欄寬調整, 新增/修改等)
+    def ensure_notes_table(self):
+        """確保「我的筆記」用的資料表存在。"""
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notes (
+                    recipe_id INTEGER PRIMARY KEY,
+                    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+                )
+            ''')
+            conn.commit()
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"建立筆記表失敗：{e}")
+        finally:
+            if conn: conn.close()
+
     def run_query(self, query, params=()):
+        conn = None
         try:
             conn = sqlite3.connect(DB_FILE)
             conn.row_factory = sqlite3.Row
@@ -1142,6 +1258,119 @@ class App(tk.Tk):
                 values_in_order.append('' if value is None else str(value))
             row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
             self.tree.insert('', 'end', values=values_in_order, tags=(row_tag,))
+        if hasattr(self, "result_count_var"):
+            self.result_count_var.set(f"共 {len(lower_case_data)} 筆")
+
+    # ------------------------------------------------------------------
+    # 我的筆記
+    # ------------------------------------------------------------------
+    def on_recipe_double_click(self, event):
+        """雙擊配方列表中的某一列，將該配方加入「我的筆記」。"""
+        region = self.tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return
+        values = self.tree.item(row_id)['values']
+        id_index = self.columns_order.index('ID')
+        try:
+            recipe_id = int(values[id_index])
+        except (ValueError, IndexError):
+            return
+
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO notes (recipe_id) VALUES (?)", (recipe_id,))
+            conn.commit()
+            is_new = cursor.rowcount > 0
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"加入筆記失敗：{e}")
+            return
+        finally:
+            if conn: conn.close()
+
+        self.populate_notes_tree()
+        name = values[self.columns_order.index('名稱')]
+        if is_new:
+            self.show_temp_status(f"已將「{name}」加入我的筆記")
+        else:
+            self.show_temp_status(f"「{name}」已經在我的筆記中")
+
+    def show_temp_status(self, message, duration_ms=2000):
+        """在篩選結果筆數旁短暫顯示提示訊息。"""
+        if not hasattr(self, "result_count_var"):
+            return
+        original = self.result_count_var.get()
+        self.result_count_var.set(message)
+        self.after(duration_ms, lambda: self.result_count_var.set(original))
+
+    def populate_notes_tree(self):
+        if not hasattr(self, "notes_tree"):
+            return
+        self.notes_tree.delete(*self.notes_tree.get_children())
+        data = self.run_query(
+            "SELECT recipes.* FROM notes JOIN recipes ON notes.recipe_id = recipes.id ORDER BY recipes.id"
+        )
+        lower_case_data = [{k.lower(): v for k, v in row_dict.items()} for row_dict in data]
+        for index, row_dict in enumerate(lower_case_data):
+            values_in_order = []
+            for col_display_name in self.columns_order:
+                db_col_name = self.column_map[col_display_name].lower()
+                value = row_dict.get(db_col_name)
+                values_in_order.append('' if value is None else str(value))
+            row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
+            self.notes_tree.insert('', 'end', values=values_in_order, tags=(row_tag,))
+
+    def remove_selected_notes(self):
+        selected_items = self.notes_tree.selection()
+        if not selected_items:
+            messagebox.showinfo("提示", "請先選擇要移除的筆記項目。")
+            return
+        id_index = self.columns_order.index('ID')
+        ids = []
+        for item in selected_items:
+            values = self.notes_tree.item(item)['values']
+            try:
+                ids.append(int(values[id_index]))
+            except (ValueError, IndexError):
+                continue
+        if not ids:
+            return
+
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            placeholders = ', '.join(['?'] * len(ids))
+            cursor.execute(f"DELETE FROM notes WHERE recipe_id IN ({placeholders})", tuple(ids))
+            conn.commit()
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"移除筆記失敗：{e}")
+            return
+        finally:
+            if conn: conn.close()
+
+        self.populate_notes_tree()
+
+    def clear_notes(self):
+        if not messagebox.askyesno("確認", "確定要清空「我的筆記」中的所有項目嗎？"):
+            return
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM notes")
+            conn.commit()
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"清空筆記失敗：{e}")
+            return
+        finally:
+            if conn: conn.close()
+
+        self.populate_notes_tree()
 
     def on_header_double_click(self, event):
         region = self.tree.identify_region(event.x, event.y)
@@ -1254,6 +1483,7 @@ class App(tk.Tk):
         try:
             placeholders = ', '.join(['?'] * len(id_to_name))
             cursor.execute(f"DELETE FROM recipes WHERE id IN ({placeholders})", tuple(id_to_name.keys()))
+            cursor.execute(f"DELETE FROM notes WHERE recipe_id IN ({placeholders})", tuple(id_to_name.keys()))
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -1264,6 +1494,7 @@ class App(tk.Tk):
 
         messagebox.showinfo("成功", f"已刪除 {len(id_to_name)} 筆配方。")
         self.refresh_all()
+        self.populate_notes_tree()
 
 
     def open_url(self, url):
