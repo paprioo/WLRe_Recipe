@@ -614,7 +614,7 @@ class App(tk.Tk):
                 "row_selected": "#7a5839",
                 "warning": "#ffe08a",
             },
-            "明亮白": {
+            "灰白": {
                 "bg": "#f4f4f6",
                 "panel": "#ffffff",
                 "panel_alt": "#ececef",
@@ -631,7 +631,7 @@ class App(tk.Tk):
                 "row_selected": "#cfe0ff",
                 "warning": "#e0a32f",
             },
-            "淡粉紅": {
+            "淺桃紅": {
                 "bg": "#fdf2f4",
                 "panel": "#ffffff",
                 "panel_alt": "#fbe6ea",
@@ -670,7 +670,7 @@ class App(tk.Tk):
         self.setup_modern_theme(self.theme_name.get())
 
         self.column_map = {
-            'ID': 'id', '物種': 'species', '物等': 'level', '名稱': 'name', '部位': 'part',
+            '★': 'marked', 'ID': 'id', '物種': 'species', '物等': 'level', '名稱': 'name', '部位': 'part',
             'ATK': 'atk', 'DEF': 'def', 'MATK': 'matk', 'MDEF': 'mdef', 'SPD': 'spd',
             '其他': 'other', '公式': 'formula', '參考配方': 'reference', '參考配方(初階)': 'reference_beginner'
         }
@@ -854,6 +854,11 @@ class App(tk.Tk):
             rb = ttk.Radiobutton(stat_count_frame, text=label, variable=self.filters['stat_count'], value=value).pack(
                 side='left', padx=5)
 
+        ttk.Separator(stat_count_frame, orient='vertical').pack(side='left', fill='y', padx=(12, 8))
+        self.filters['marked'] = tk.StringVar(value="全部")
+        for value, label in [('全部', '全部'), ('marked', '★ 已標記'), ('unmarked', '未標記')]:
+            ttk.Radiobutton(stat_count_frame, text=label, variable=self.filters['marked'], value=value).pack(side='left', padx=5)
+
         stats_row, stats_content = self.build_filter_card(filter_area, "數值範圍")
         stats_frame = ttk.Frame(stats_content, style='Card.TFrame')
         stats_frame.pack(side='left', expand=True, fill='x')
@@ -921,12 +926,23 @@ class App(tk.Tk):
         self.theme_combo.pack(side='left', padx=(6, 0))
         self.theme_combo.bind("<<ComboboxSelected>>", self.change_theme)
 
-        # 配方操作工具列（新增/修改/刪除）
+        # 配方操作工具列（新增/修改/刪除/標色）
         recipe_toolbar = ttk.Frame(right_container, style='Card.TFrame')
         recipe_toolbar.pack(side='top', fill='x', pady=(8, 0))
         ttk.Button(recipe_toolbar, text="批量新增", command=self.batch_add_recipes, style='Accent.TButton').pack(side='left')
         ttk.Button(recipe_toolbar, text="修改選定配方", command=self.modify_recipe).pack(side='left', padx=8)
         ttk.Button(recipe_toolbar, text="刪除選定配方", command=self.delete_recipe).pack(side='left')
+        ttk.Separator(recipe_toolbar, orient='vertical').pack(side='left', fill='y', padx=12, pady=2)
+        ttk.Button(recipe_toolbar, text="★ 標記", command=self.toggle_mark).pack(side='left')
+        ttk.Button(recipe_toolbar, text="取消標記", command=self.clear_mark).pack(side='left', padx=6)
+
+        # 右鍵選單
+        self._context_menu = tk.Menu(self, tearoff=0)
+        self._context_menu.add_command(label="★ 標記", command=self.toggle_mark)
+        self._context_menu.add_command(label="取消標記", command=self.clear_mark)
+        self._context_menu.add_separator()
+        self._context_menu.add_command(label="修改配方", command=self.modify_recipe)
+        self._context_menu.add_command(label="刪除配方", command=self.delete_recipe)
 
         self.main_notebook = ttk.Notebook(right_container)
         self.main_notebook.pack(expand=True, fill='both', pady=(8, 0))
@@ -938,6 +954,7 @@ class App(tk.Tk):
         self.tree['displaycolumns'] = [c for c in self.columns_order if c != 'ID']
         # ... (後續 Treeview 設定保持不變) ...
         for col in self.columns_order: self.tree.heading(col, text=col)
+        self.tree.column('★', width=28, anchor='center', stretch=False)
         self.tree.column('ID', width=40, anchor='center');
         self.tree.column('物種', width=50);
         self.tree.column('物等', width=40, anchor='center');
@@ -955,6 +972,7 @@ class App(tk.Tk):
         self.tree.bind('<Button-1>', self.on_header_click);
         self.tree.bind('<Double-1>', self.on_header_double_click)
         self.tree.bind('<Double-1>', self.on_recipe_double_click, add='+')
+        self.tree.bind('<Button-3>', self._show_context_menu)
         vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview);
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -987,6 +1005,7 @@ class App(tk.Tk):
         self.notes_tree = ttk.Treeview(notes_table_frame, columns=self.columns_order, show='headings')
         self.notes_tree['displaycolumns'] = [c for c in self.columns_order if c != 'ID']
         for col in self.columns_order: self.notes_tree.heading(col, text=col)
+        self.notes_tree.column('★', width=28, anchor='center', stretch=False)
         self.notes_tree.column('ID', width=40, anchor='center');
         self.notes_tree.column('物種', width=50);
         self.notes_tree.column('物等', width=40, anchor='center');
@@ -1110,6 +1129,13 @@ class App(tk.Tk):
             conditions.append(multi_stat_logic)
         elif stat_count_choice == '無屬性':
             conditions.append(f"{stat_count_logic} = 0")
+
+        marked_choice = self.filters.get('marked') and self.filters['marked'].get()
+        if marked_choice == 'marked':
+            conditions.append("marked = 1")
+        elif marked_choice == 'unmarked':
+            conditions.append("(marked IS NULL OR marked = 0)")
+
         def is_valid_int(s):
             if not s:
                 return False
@@ -1153,6 +1179,8 @@ class App(tk.Tk):
         self.filters['keyword'].delete(0, 'end')
         for var in self.filters['parts'].values(): var.set(False)
         self.filters['stat_count'].set('全部')
+        if 'marked' in self.filters:
+            self.filters['marked'].set('全部')
         for stat in ['ATK', 'DEF', 'MATK', 'MDEF', 'SPD']:
             self.filters[f'{stat}_min'].delete(0, 'end');
             self.filters[f'{stat}_max'].delete(0, 'end')
@@ -1215,8 +1243,71 @@ class App(tk.Tk):
             self.tree.see(restored_items[0])
 
     # 其他方法... (run_query, populate_tree, 排序, 欄寬調整, 新增/修改等)
+    def _show_context_menu(self, event):
+        """右鍵點擊表格時顯示選單，並確保點到的列被選取。"""
+        row_id = self.tree.identify_row(event.y)
+        if row_id:
+            if row_id not in self.tree.selection():
+                self.tree.selection_set(row_id)
+            self._context_menu.post(event.x_root, event.y_root)
+
+    def _get_selected_recipe_ids(self):
+        """取得目前選取列的 {tree_item: recipe_id} dict。"""
+        id_index = self.columns_order.index('ID')
+        result = {}
+        for item in self.tree.selection():
+            try:
+                rid = int(self.tree.item(item)['values'][id_index])
+                result[item] = rid
+            except (ValueError, IndexError):
+                pass
+        return result
+
+    def toggle_mark(self):
+        """對選取的配方切換標記狀態（已標記→取消，未標記→加上）。"""
+        item_id_map = self._get_selected_recipe_ids()
+        if not item_id_map:
+            messagebox.showinfo("提示", "請先選取要標記的配方。")
+            return
+        mark_index = self.columns_order.index('★')
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            for item, rid in item_id_map.items():
+                current = self.tree.item(item)['values'][mark_index]
+                new_val = '' if str(current) == '★' else '★'
+                cursor.execute("UPDATE recipes SET marked = ? WHERE id = ?",
+                               (1 if new_val == '★' else 0, rid))
+                self.tree.set(item, '★', new_val)
+            conn.commit()
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"標記失敗：{e}")
+        finally:
+            if conn: conn.close()
+
+    def clear_mark(self):
+        """清除選取配方的標記。"""
+        item_id_map = self._get_selected_recipe_ids()
+        if not item_id_map:
+            return
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            placeholders = ','.join(['?'] * len(item_id_map))
+            cursor.execute(f"UPDATE recipes SET marked = 0 WHERE id IN ({placeholders})",
+                           list(item_id_map.values()))
+            conn.commit()
+            for item in item_id_map:
+                self.tree.set(item, '★', '')
+        except Exception as e:
+            messagebox.showerror("資料庫錯誤", f"清除標記失敗：{e}")
+        finally:
+            if conn: conn.close()
+
     def ensure_notes_table(self):
-        """確保「我的筆記」用的資料表存在。"""
+        """確保「我的筆記」用的資料表存在，並確保 recipes 有 marked 欄位。"""
         conn = None
         try:
             conn = sqlite3.connect(DB_FILE)
@@ -1227,9 +1318,14 @@ class App(tk.Tk):
                     FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
                 )
             ''')
+            # 若 marked 欄位不存在就新增（ALTER TABLE 對既有 DB 安全）
+            try:
+                cursor.execute("ALTER TABLE recipes ADD COLUMN marked INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # 欄位已存在，忽略
             conn.commit()
         except Exception as e:
-            messagebox.showerror("資料庫錯誤", f"建立筆記表失敗：{e}")
+            messagebox.showerror("資料庫錯誤", f"初始化失敗：{e}")
         finally:
             if conn: conn.close()
 
@@ -1255,7 +1351,11 @@ class App(tk.Tk):
             for col_display_name in self.columns_order:
                 db_col_name = self.column_map[col_display_name].lower()
                 value = row_dict.get(db_col_name)
-                values_in_order.append('' if value is None else str(value))
+                if col_display_name == '★':
+                    value = '★' if value else ''
+                else:
+                    value = '' if value is None else str(value)
+                values_in_order.append(value)
             row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
             self.tree.insert('', 'end', values=values_in_order, tags=(row_tag,))
         if hasattr(self, "result_count_var"):
@@ -1320,7 +1420,11 @@ class App(tk.Tk):
             for col_display_name in self.columns_order:
                 db_col_name = self.column_map[col_display_name].lower()
                 value = row_dict.get(db_col_name)
-                values_in_order.append('' if value is None else str(value))
+                if col_display_name == '★':
+                    value = '★' if value else ''
+                else:
+                    value = '' if value is None else str(value)
+                values_in_order.append(value)
             row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
             self.notes_tree.insert('', 'end', values=values_in_order, tags=(row_tag,))
 
